@@ -1,0 +1,175 @@
+<html>
+<head>
+<title>Web BLE for the Etekcity Nutrition Scale</title>
+<style>
+    #output p {
+        font-family: monospace;
+    }
+</style>
+</head>
+<body>
+<button id="scanButton">Scan for Etekcity Nutrition Scale</button>
+<br>
+<ol>
+    <li>Click the Scan for Etekcity Nutrition Scale button
+        <br>
+    <li>Select Etekcity Nutrition Scale
+        <br>
+    <li>Click Pair
+        <br>
+    <li>Look for updates below and in the JavaScript console
+</ol>
+<div id="output">
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const scanButton = document.getElementById('scanButton');
+        let previousScaleValue = null;
+
+        scanButton.addEventListener('click', function () {
+            navigator.bluetooth.requestDevice({
+                filters: [{name: 'Etekcity Nutrition Scale'}, {services: [0x1910, 0x2c12, 0x2c12]}]
+                })
+                .then(device => {
+                    console.debug('Found device:', device.name);
+                    return device.gatt.connect();
+                })
+                .then(gattServer => {
+                    return gattServer.getPrimaryService(0x1910);
+                })
+                .then(service => {
+                    return service.getCharacteristic(0x2c12);
+                })
+                .then(characteristic => {
+                    characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+                    return characteristic.startNotifications();
+                })
+                .then(() => {
+                    console.debug('Notifications started');
+                    const outputDiv = document.getElementById('output');
+                    const newLine = document.createElement('p');
+                    newLine.textContent = "Connected to Etekcity Nutrition Scale";
+                    outputDiv.insertBefore(newLine, outputDiv.firstChild);
+                })
+                .catch(error => {
+                    console.error('Bluetooth error:', error);
+                });
+        });
+
+        function handleCharacteristicValueChanged(event) {
+            const value = event.target.value;
+            let type = value.getUint8(4);
+
+            switch (type) {
+                    case 0xc0:
+                        console.debug("SET_UNIT (0xc0)");
+                        break;
+                    case 0xc1:
+                        console.debug("SET_TARE (0xc1)");
+                        break;
+                    case 0xc4:
+                        console.debug("SET_AUTO_OFF (0xc4)");
+                        break;
+                    case 0xd0:
+                        console.debug("MEASUREMENT (0xd0)");
+                        break;
+                    case 0xd1:
+                        console.debug("UNIT_STATE (0xd1)");
+                        break;
+                    case 0xd3:
+                        console.debug("TARE_STATE (0xd3)");
+                        break;
+                    case 0xd5:
+                        console.debug("AUTO_OFF_STATE (0xd5)");
+                        break;
+                    case 0xe0:
+                        console.debug("ERROR_STATE (0xe0)");
+                        break;
+                    case 0xe4:
+                        console.debug("ITEM_STATE (0xe4)");
+                        break;
+                    case 0xc2:
+                        console.debug("SET_NUTRITION (0xc2)");
+                        break;
+                    case 0xc3:
+                        console.debug("PING (0xc3)");
+                        break;
+                    case 0xd4:
+                        console.debug("PONG (0xd4)");
+                        break;
+                    default:
+                        console.debug("UNKNOWN TYPE: " + type);
+                        break;
+                }
+
+            if (value.byteLength === 12) {
+                let scaleSign = value.getUint8(6);
+                let scaleValue = value.getUint16(7, false); // big-endian
+                let scaleUnitHex = value.getUint8(9);
+                let scaleStableHex = value.getUint8(10);
+
+                let scaleUnit;
+                let scaleFactor;
+                let scaleStable;
+
+                switch (scaleUnitHex) {
+                    case 0x00:
+                        scaleUnit = "g";
+                        scaleFactor = 10;
+                        break;
+                    case 0x02:
+                        scaleUnit = "mL";
+                        scaleFactor = 10;
+                        break;
+                    case 0x04:
+                        scaleUnit = "mL milk";
+                        scaleFactor = 10;
+                        break;
+                    case 0x03:
+                        scaleUnit = "fl oz";
+                        scaleFactor = 100;
+                        break;
+                    case 0x05:
+                        scaleUnit = "fl oz milk";
+                        scaleFactor = 100;
+                        break;
+                    case 0x06:
+                        scaleUnit = "oz";
+                        scaleFactor = 100;
+                        break;
+                    case 0x01:
+                        scaleUnit = "lb oz";
+                        scaleFactor = 100;
+                        break;
+                    default:
+                        scaleUnit = "?";
+                        scaleFactor = 1;
+                        break;
+                }
+
+                if (scaleSign) {
+                    scaleValue *= -1;
+                }
+
+                scaleValue /= scaleFactor;
+
+                if (scaleStableHex === 0x01) {
+                    scaleStable = 'stable: ';
+                } else {
+                    scaleStable = 'unstbl: ';
+                }
+
+                if (scaleValue !== previousScaleValue) {
+                    const outputDiv = document.getElementById('output');
+                    const newLine = document.createElement('p');
+                    newLine.textContent = new Date().getTime() + ' ' + scaleStable + scaleValue + ' ' + scaleUnit;
+                    outputDiv.insertBefore(newLine, outputDiv.firstChild);
+
+                    previousScaleValue = scaleValue;
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
